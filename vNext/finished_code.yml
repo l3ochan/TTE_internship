@@ -7,30 +7,29 @@
   register: temp_output
   delegate_to: localhost
 
-- name: Send e-mail to template
-  community.general.mail:
-    host: "{{ mail_host }}"
-    subject: "[VNext AVD] A virtual machine has been created for you ✦ Une machine virtuelle a été créée pour vous| {{ ritm }}"
-    from: "{{ mail_sender }}"
-    to: "{{ mail_to }}"
-    cc: "{{ mail_cc }}"
-    charset: utf8
-    subtype: html
-    body: "{{ lookup('template', 'mail_body.html.j2') }}"
-    attach:
+- name: Send e-mail to '{{ mail_to }}'
+  include_role:
+    name: tte.common.send_mail
+  vars: 
+    tte_mail_sender: Automation Team
+    tte_mail_subject: "[VNext AVD] A virtual machine has been created for you ✦ Une machine virtuelle a été créée pour vous| {{ ritm }}"
+    tte_mail_dest: "leonard-anton.llosa@external.totalenergies.com"
+#    tte_mail_cc: "{{ mail_cc }}"
+    tte_mail_subtype: html
+    tte_mail_body: "{{ lookup('template', 'mail_body.html.j2') }}"
+    tte_mail_attach: 
       - "/tmp/VNext_User_Guide_-_W11_MFA.pptx"
-  register: sedmmail1
-  delegate_to: localhost
+    register: tte_send_mail_result
 
 - name: Set fact for successfully mail send
   ansible.builtin.set_fact:
     result: "OK"
     work_note: "Mail has been sent on {{ external_email }} user with user guide attachement"
-  when: sedmmail1.msg is defined and sedmmail1.rc is not defined
+  when: tte_send_mail_result.msg is defined and tte_send_mail_result.rc is not defined
 
 - name: Set fact for failed
   ansible.builtin.set_fact:
     assignment_group: "VNEXTDAAS.CENTRALSUPPORT_GLB_TGS"
     result: "KO"
     work_note: "Mail has not been sent on {{ external_email }} user with attachement"
-  when: sedmmail1.rc is defined and sedmmail1.rc == 1
+  when: tte_send_mail_result.rc is defined and tte_send_mail_result.rc == 1
