@@ -1,0 +1,36 @@
+---
+- name: Copy VNext_User_Guide to localhost
+  ansible.builtin.copy:
+    src: files/VNext_User_Guide_-_W11_MFA.pptx
+    dest: "/tmp/VNext_User_Guide_-_W11_MFA.pptx"
+    mode: '644'
+  register: temp_output
+  delegate_to: localhost
+
+- name: Send e-mail to template
+  community.general.mail:
+    host: "{{ mail_host }}"
+    subject: "[VNext AVD] A virtual machine has been created for you ✦ Une machine virtuelle a été créée pour vous| {{ ritm }}"
+    from: "{{ mail_sender }}"
+    to: "{{ mail_to }}"
+    cc: "{{ mail_cc }}"
+    charset: utf8
+    subtype: html
+    body: "{{ lookup('template', 'mail_body.html.j2') }}"
+    attach:
+      - "/tmp/VNext_User_Guide_-_W11_MFA.pptx"
+  register: sedmmail1
+  delegate_to: localhost
+
+- name: Set fact for successfully mail send
+  ansible.builtin.set_fact:
+    result: "OK"
+    work_note: "Mail has been sent on {{ external_email }} user with user guide attachement"
+  when: sedmmail1.msg is defined and sedmmail1.rc is not defined
+
+- name: Set fact for failed
+  ansible.builtin.set_fact:
+    assignment_group: "VNEXTDAAS.CENTRALSUPPORT_GLB_TGS"
+    result: "KO"
+    work_note: "Mail has not been sent on {{ external_email }} user with attachement"
+  when: sedmmail1.rc is defined and sedmmail1.rc == 1
