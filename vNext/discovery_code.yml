@@ -1,0 +1,42 @@
+---
+
+###############################################################################
+#  Test to send mail using TotalEnergies Collection
+###############################################################################
+
+- name: sendmail with pj
+  hosts: localhost
+  gather_facts: false
+  vars: 
+    tte_mail_sender: Automation Team
+  tasks:
+    - name: Copy file to be sent to localhost
+      ansible.builtin.copy:
+        src: files/Hello.docx
+        dest: "/tmp/Hello.docx"
+        mode: '644'
+      register: temp_output
+      delegate_to: localhost
+    
+    - name: debug file copy result
+      debug:
+        msg: "file copied"
+
+    - name: Send_mail with file 
+      include_role:
+        name: tte.common.send_mail
+      vars:
+        tte_mail_subject: "It works !"
+        tte_mail_dest: "{{ dest_mail }}"
+        tte_mail_body: "Hi this is sent from AAP PP. There's a file attached to this mail."
+        tte_mail_attach: 
+          - /tmp/Hello.docx
+        register: tte_send_mail_result
+
+    - name: debug mail sending result
+      debug:
+        msg: "mail sent"
+
+    - name: Display return code
+      ansible.builtin.debug:
+        var: tte_send_mail_result
