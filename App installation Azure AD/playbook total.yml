@@ -1,0 +1,147 @@
+---
+- name: Retrieve infos from Azure PPLIFT
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    user_principal_name_query: "leonard-anton.llosa@pptotalworkplace.mail.onmicrosoft.com"
+    # group_name_query: "L1103679-test"    Testing only
+    software_name: "PREMIEREPRO-CC"
+
+
+  tasks:
+    - name: Search user
+      block:
+
+      - name: "[SEARCHING]: Looking for UPN: {{ user_principal_name_query }}"
+        azure.azcollection.azure_rm_aduser_info:
+          user_principal_name: "{{ user_principal_name_query }}"
+          client_id: "{{ lookup('ansible.builtin.env', 'AZURE_CLIENT_ID') }}"
+          secret: "{{ lookup('ansible.builtin.env', 'AZURE_SECRET') }}"
+          tenant: "{{ lookup('ansible.builtin.env', 'AZURE_TENANT') }}"
+          subscription_id: "{{ lookup('ansible.builtin.env', 'AZURE_SUBSCRIPTION_ID') }}"
+        register: userInfo
+        delegate_to: localhost
+        ignore_errors: true
+
+
+      - name: [FAILURE]: UPN {{ user_principal_name_query }} not found !
+        fail:
+          msg: "Technical details: {{ userInfo }}"
+        when: userInfo.failed
+    
+
+      - name: "[SUCCESS]: Found  {{ userInfo.ad_users[0].display_name }}"
+        debug:
+          msg: "[SUCCESS]: Found  {{ userInfo.ad_users[0].display_name }}"
+        when: user_principal_name_query == userInfo.ad_users[0].user_principal_name
+
+
+      - name: [EDIT FACTS]: Setting fact for UPN
+        set_fact:
+          user_object_id: "{{ userInfo.ad_users[0].object_id }}"
+          user_principal_name: "{{ userInfo.ad_users[0].user_principal_name }}"
+    
+
+
+    - name: Search group for software on snow
+      block:
+
+        - name: "[SEARCHING]: Looking for corresponding group on SNOW for software: {{ software_name }}"
+          servicenow.itsm.api_info:
+            instance:
+              host: <HOST>
+              username: <UNAME>
+              grant_type: password
+              client_id: "<CLIENT ID>"
+              client_secret: "<CLIENT SECRET>"
+              password: "<PASSWORD>"
+            api_path: api/now/v1/table/u_department_software
+            sysparm_query: "u_logiciel={{ software_name }}"
+            columns:
+              - u_aad_group 
+              - u_logiciel
+          delegate_to: localhost
+          register: soft_info
+
+
+        - name: "[FAILURE]: Couldn't find a corresponding Azure group for app: '{{ software_name }}' in the SNOW 'u_department_software' table!"
+          fail:
+            msg: "Technical details: {{ soft_info }}"
+          when: groupInfo.ad_groups | length > 1
+
+        - name: "[Success]: Corresponding Azure group name: '{{ soft_info.record[0].u_aad_group | trim }}' found in the SNOW 'u_department_software' table for software: {{ software_name }}'"
+          debug:
+            msg: "[Success]: Corresponding Azure group name: '{{ soft_info.record[0].u_aad_group | trim }}' found in the SNOW 'u_department_software' table for software: {{ software_name }}'"
+
+
+        - name: [EDIT FACTS]: Setting fact for corresponding Azure AD group 
+          set_fact:
+            group_name_query: "{{ soft_info.record[0].u_aad_group | trim  }}"
+
+
+
+    - name: Search Azure group
+      block:
+
+      - name: "[SEARCHING]: Looking for the group named: '{{ group_name_query }}' on Azure AD" 
+        azure.azcollection.azure_rm_adgroup_info:
+          attribute_name: "displayName"
+          attribute_value: "{{ group_name_query }}"   
+          client_id: "{{ lookup('ansible.builtin.env', 'AZURE_CLIENT_ID') }}"
+          secret: "{{ lookup('ansible.builtin.env', 'AZURE_SECRET') }}"
+          tenant: "{{ lookup('ansible.builtin.env', 'AZURE_TENANT') }}"
+          subscription_id: "{{ lookup('ansible.builtin.env', 'AZURE_SUBSCRIPTION_ID') }}"
+        register: groupInfo
+        delegate_to: localhost
+        ignore_errors: true
+
+  
+      - name: "[FAILURE]: No group found for query: '{{ group_name_query }}'!"
+        fail:
+          msg: "Technical details: {{ groupInfo }}"
+        when: groupInfo.failed or (groupInfo.ad_groups | length == 0)
+
+      - name: "[FAILURE]: Multiple groups found for query: '{{ group_name_query }}'!"
+        fail:
+          msg: "Technical details: {{ groupInfo }}"
+        when: groupInfo.ad_groups | length > 1
+
+      - name: "[Success]: Group found for query: '{{ group_name_query }}' with the object_id : {{ groupInfo.ad_groups[0].object_id }}'"
+        debug:
+          msg: "[Success]: Group found for query: '{{ group_name_query }}' with the object_id : {{ groupInfo.ad_groups[0].object_id }}"
+
+
+      - name: [EDIT FACTS]: Setting fact for group info
+        set_fact:
+          group_object_id: "{{ groupInfo.ad_groups[0].object_id }}"
+          group_display_name: "{{ groupInfo.ad_groups[0].display_name }}"
+
+
+
+    - name: Add user to group
+      block:
+
+      - name: "[EDIT]: Adding user: '{{ user_principal_name }}' to group '{{ group_display_name }}'"
+        azure.azcollection.azure_rm_adgroup:
+          object_id: "{{ group_object_id }}"
+          present_members: 
+            - "{{ user_object_id }}"
+          state: present
+          client_id: "{{ lookup('ansible.builtin.env', 'AZURE_CLIENT_ID') }}"
+          secret: "{{ lookup('ansible.builtin.env', 'AZURE_SECRET') }}"
+          tenant: "{{ lookup('ansible.builtin.env', 'AZURE_TENANT') }}"
+          subscription_id: "{{ lookup('ansible.builtin.env', 'AZURE_SUBSCRIPTION_ID') }}"
+        delegate_to: localhost
+        register: add_user_result
+
+
+      - name: "[Success]: User '{{ user_principal_name }}' added to group '{{ group_display_name }}'"
+        debug:
+          msg: "[Success]: User '{{ user_principal_name }}' added to group '{{ group_display_name }}"
+
+      rescue:
+      - name: "[FAILURE]: Couldn't add '{{ user_principal_name }}' to group '{{ group_display_name }}"
+        fail:
+          msg: "Technical details: {{ add_user_result }}"
